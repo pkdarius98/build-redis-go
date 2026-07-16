@@ -13,15 +13,21 @@ func handleCommand(args []string) string {
 	switch cmd {
 	case "PING":
 		if len(args) == 1 {
-			return "+PONG\r\n"
+			return encodeSimpleString("PONG")
 		}
 
 		return encodeBulkString(args[1])
 	case "ECHO":
 		return encodeBulkString(args[1])
+	case "COMMAND":
+		return encodeSimpleString("OK")
 	}
 
 	return fmt.Sprintf("-ERR unknown command '%s'\r\n", cmd)
+}
+
+func encodeSimpleString(s string) string {
+	return fmt.Sprintf("+%s\r\n", s)
 }
 
 func encodeBulkString(s string) string {

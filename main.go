@@ -3,99 +3,108 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"os"
-	"strconv"
 	"strings"
 )
 
 var store = map[string]string{}
 
-func encodeBulk(s string, ok bool) string {
+func handleCommand(args []string) string {
+	cmd := strings.ToUpper(args[0])
+
+	switch cmd {
+	case "PING":
+		if len(args) > 2 {
+			return errorWrongNumberOfArguments(cmd)
+		}
+
+		if len(args) == 1 {
+			return encodeSimpleString("PONG")
+		}
+
+		return encodeBulkString(args[1], true)
+	case "ECHO":
+		if len(args) != 2 {
+			return errorWrongNumberOfArguments(cmd)
+		}
+
+		return encodeBulkString(args[1], true)
+	case "COMMAND":
+		return encodeSimpleString("OK")
+
+	case "SET":
+		if len(args) != 3 {
+			return errorWrongNumberOfArguments(cmd)
+		}
+
+		store[args[1]] = args[2]
+		return encodeSimpleString("OK")
+
+	case "GET":
+		if len(args) != 2 {
+			return errorWrongNumberOfArguments(cmd)
+		}
+
+		val, ok := store[args[1]]
+		return encodeBulkString(val, ok)
+	}
+
+	return fmt.Sprintf("-ERR unknown command '%s'\r\n", cmd)
+}
+
+func encodeSimpleString(s string) string {
+	return fmt.Sprintf("+%s\r\n", s)
+}
+
+func encodeBulkString(s string, ok bool) string {
 	if !ok {
 		return "$-1\r\n"
 	}
 	return fmt.Sprintf("$%d\r\n%s\r\n", len(s), s)
 }
-func encodeSimple(s string) string { return "+" + s + "\r\n" }
-func encodeError(s string) string  { return "-" + s + "\r\n" }
 
-func handle(args []string) string {
-	cmd := strings.ToUpper(args[0])
-	switch cmd {
-	case "PING":
-		if len(args) == 1 {
-			return encodeSimple("PONG")
-		}
-		return encodeBulk(args[1], true)
-	case "ECHO":
-		return encodeBulk(args[1], true)
-	case "SET":
-		store[args[1]] = args[2]
-		return encodeSimple("OK")
-	case "GET":
-		v, ok := store[args[1]]
-		return encodeBulk(v, ok)
-	}
-	return encodeError(fmt.Sprintf("ERR unknown command '%s'", cmd))
+func encodeError(s string) string {
+	return fmt.Sprintf("-ERR %s\r\n", s)
 }
 
-// parseRequest reads one RESP array from r and returns its arg list.
-func parseRequest(r *bufio.Reader) ([]string, error) {
-	// Read the *N\r\n line
-	line, err := r.ReadString('\n')
-	if err != nil {
-		return nil, err
-	}
-
-	if !strings.HasPrefix(line, "*") {
-		return nil, fmt.Errorf("expected '*', got %q", line)
-	}
-
-	n, err := strconv.Atoi(strings.TrimRight(line[1:], "\r\n"))
-	if err != nil {
-		return nil, err
-	}
-
-	var args []string
-	for i := 0; i < n; i++ {
-		line, err := r.ReadString('\n')
-		if err != nil {
-			return nil, err
-		}
-
-		if !strings.HasPrefix(line, "$") {
-			return nil, fmt.Errorf("expected '$', got %q", line)
-		}
-
-		lenBytes, err := strconv.Atoi(strings.TrimRight(line[1:], "\r\n"))
-		if err != nil {
-			return nil, err
-		}
-
-		buf := make([]byte, lenBytes+2)
-		bytesRead, err := io.ReadFull(r, buf)
-		if err != nil || bytesRead != lenBytes+2 {
-			return nil, err
-		}
-
-		args = append(args, string(buf[:lenBytes]))
-
-	}
-
-	return args, nil
+func errorWrongNumberOfArguments(command string) string {
+	return encodeError(fmt.Sprintf("wrong number of arguments for '%s' command", command))
 }
 
 func main() {
-	r := bufio.NewReader(os.Stdin)
-	w := bufio.NewWriter(os.Stdout)
-	defer w.Flush()
-	for {
-		args, err := parseRequest(r)
-		if err != nil {
-			return
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
 		}
-		w.WriteString(handle(args))
-		w.Flush()
+		args := parseArgs(line)
+		response := handleCommand(args)
+		fmt.Print(response)
 	}
+}
+
+func parseArgs(line string) []string {
+	var args []string
+	var current strings.Builder
+	inQuotes := false
+	for _, ch := range line {
+		switch {
+		case ch == '"' && !inQuotes:
+			inQuotes = true
+		case ch == '"':
+			inQuotes = false
+		case ch == ' ' && !inQuotes:
+			if current.Len() > 0 {
+				args = append(args, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteRune(ch)
+		}
+	}
+	if current.Len() > 0 {
+		args = append(args, current.String())
+	}
+	return args
 }

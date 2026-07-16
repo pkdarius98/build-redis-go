@@ -12,12 +12,20 @@ func handleCommand(args []string) string {
 
 	switch cmd {
 	case "PING":
+		if len(args) > 2 {
+			return errorWrongNumberOfArguments(cmd)
+		}
+
 		if len(args) == 1 {
 			return encodeSimpleString("PONG")
 		}
 
 		return encodeBulkString(args[1])
 	case "ECHO":
+		if len(args) != 2 {
+			return errorWrongNumberOfArguments(cmd)
+		}
+
 		return encodeBulkString(args[1])
 	case "COMMAND":
 		return encodeSimpleString("OK")
@@ -32,6 +40,14 @@ func encodeSimpleString(s string) string {
 
 func encodeBulkString(s string) string {
 	return fmt.Sprintf("$%d\r\n%s\r\n", len(s), s)
+}
+
+func encodeError(s string) string {
+	return fmt.Sprintf("-ERR %s\r\n", s)
+}
+
+func errorWrongNumberOfArguments(command string) string {
+	return encodeError(fmt.Sprintf("wrong number of arguments for '%s' command", command))
 }
 
 func main() {

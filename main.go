@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -62,6 +63,51 @@ func handleCommand(args []string) string {
 		}
 
 		return encodeNumber(len(store))
+	case "INCR", "DECR":
+		valStr, exist := store[args[1]]
+		if !exist {
+			valStr = "0"
+		}
+
+		val, err := strconv.Atoi(valStr)
+		if err != nil {
+			return encodeError("value is not an integer or out of range")
+		}
+
+		var newVal int
+		if cmd == "INCR" {
+			newVal = val + 1
+		} else {
+			newVal = val - 1
+		}
+
+		store[args[1]] = strconv.Itoa(newVal)
+		return encodeNumber(newVal)
+	case "INCRBY", "DECRBY":
+		valStr, exist := store[args[1]]
+		if !exist {
+			valStr = "0"
+		}
+
+		val, err := strconv.Atoi(valStr)
+		if err != nil {
+			return encodeError("value is not an integer or out of range")
+		}
+
+		amount, err := strconv.Atoi(args[2])
+		if err != nil {
+			return encodeError("amount is not an integer")
+		}
+
+		var newVal int
+		if cmd == "INCRBY" {
+			newVal = val + amount
+		} else {
+			newVal = val - amount
+		}
+
+		store[args[1]] = strconv.Itoa(newVal)
+		return encodeNumber(newVal)
 	}
 
 	return fmt.Sprintf("-ERR unknown command '%s'\r\n", cmd)

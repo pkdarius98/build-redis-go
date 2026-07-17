@@ -33,13 +33,21 @@ func handleCommand(args []string) string {
 		return encodeSimpleString("OK")
 
 	case "SET":
-		if len(args) != 3 {
-			return errorWrongNumberOfArguments(cmd)
+		if len(args) == 3 {
+			store[args[1]] = args[2]
+			return encodeSimpleString("OK")
+		}
+		if len(args) == 4 {
+			_, exist := store[args[1]]
+			if (strings.ToUpper(args[3]) == "NX" && exist) || (strings.ToUpper(args[3]) == "XX" && !exist) {
+				return encodeBulkString("", false)
+			}
+
+			store[args[1]] = args[2]
+			return encodeSimpleString("OK")
 		}
 
-		store[args[1]] = args[2]
-		return encodeSimpleString("OK")
-
+		return errorWrongNumberOfArguments(cmd)
 	case "GET":
 		if len(args) != 2 {
 			return errorWrongNumberOfArguments(cmd)

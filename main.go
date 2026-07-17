@@ -47,9 +47,20 @@ func handleCommand(args []string) string {
 
 		val, ok := store[args[1]]
 		return encodeBulkString(val, ok)
+
+	case "DBSIZE":
+		if len(args) != 1 {
+			return errorWrongNumberOfArguments(cmd)
+		}
+
+		return encodeNumber(len(store))
 	}
 
 	return fmt.Sprintf("-ERR unknown command '%s'\r\n", cmd)
+}
+
+func encodeNumber(n int) string {
+	return fmt.Sprintf(":%d\r\n", n)
 }
 
 func encodeSimpleString(s string) string {

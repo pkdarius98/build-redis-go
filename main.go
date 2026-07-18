@@ -39,15 +39,36 @@ func handleCommand(args []string) string {
 		return encodeSimpleString("OK")
 
 	case "SET":
-		if len(args) == 3 {
+		if len(args) == 4 || len(args) == 6 {
+			_, exist := store[args[1]]
+			condition := strings.ToUpper(args[len(args)-1])
+			if (condition == "NX" && exist) || (condition == "XX" && !exist) {
+				return encodeBulkString("", false)
+			}
+		}
+
+		if len(args) == 3 || len(args) == 4 {
 			store[args[1]] = args[2]
 			return encodeSimpleString("OK")
 		}
-		if len(args) == 4 {
-			_, exist := store[args[1]]
-			if (strings.ToUpper(args[3]) == "NX" && exist) || (strings.ToUpper(args[3]) == "XX" && !exist) {
-				return encodeBulkString("", false)
+
+		if len(args) == 5 || len(args) == 6 {
+			expiryDuration, err := strconv.Atoi(args[4])
+			if err != nil {
+				return encodeError("value is not an integer or out of range")
 			}
+
+			now := time.Now()
+
+			var expireDurationUnit time.Duration
+			if args[3] == "EX" {
+				expireDurationUnit = time.Second / time.Nanosecond
+			} else {
+				expireDurationUnit = time.Millisecond / time.Nanosecond
+			}
+
+			expiryTime := now.Add(time.Duration(expiryDuration) * expireDurationUnit)
+			expiryTimes[args[1]] = expiryTime
 
 			store[args[1]] = args[2]
 			return encodeSimpleString("OK")
@@ -137,7 +158,7 @@ func handleCommand(args []string) string {
 		expiryTimes[args[1]] = expiryTime
 		return encodeNumber(1)
 
-	case "TTL":
+	case "TTL", "PTTL":
 		if len(args) != 2 {
 			return errorWrongNumberOfArguments(cmd)
 		}
@@ -157,7 +178,11 @@ func handleCommand(args []string) string {
 			return encodeNumber(-2)
 		}
 
-		return encodeNumber(int(expiryTime.Sub(time.Now()).Round(time.Second).Seconds()))
+		if cmd == "TTL" {
+			return encodeNumber(int(expiryTime.Sub(time.Now()).Round(time.Second).Seconds()))
+		}
+
+		return encodeNumber(int(expiryTime.Sub(time.Now()).Round(time.Millisecond).Milliseconds()))
 
 	case "PERSIST":
 		if len(args) != 2 {

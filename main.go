@@ -6,9 +6,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var store = map[string]string{}
+
+var expiryTimes = map[string]time.Time{}
 
 func handleCommand(args []string) string {
 	cmd := strings.ToUpper(args[0])
@@ -24,12 +27,14 @@ func handleCommand(args []string) string {
 		}
 
 		return encodeBulkString(args[1], true)
+
 	case "ECHO":
 		if len(args) != 2 {
 			return errorWrongNumberOfArguments(cmd)
 		}
 
 		return encodeBulkString(args[1], true)
+
 	case "COMMAND":
 		return encodeSimpleString("OK")
 
@@ -49,6 +54,7 @@ func handleCommand(args []string) string {
 		}
 
 		return errorWrongNumberOfArguments(cmd)
+
 	case "GET":
 		if len(args) != 2 {
 			return errorWrongNumberOfArguments(cmd)
@@ -63,6 +69,7 @@ func handleCommand(args []string) string {
 		}
 
 		return encodeNumber(len(store))
+
 	case "INCR", "DECR":
 		valStr, exist := store[args[1]]
 		if !exist {
@@ -83,6 +90,7 @@ func handleCommand(args []string) string {
 
 		store[args[1]] = strconv.Itoa(newVal)
 		return encodeNumber(newVal)
+
 	case "INCRBY", "DECRBY":
 		valStr, exist := store[args[1]]
 		if !exist {
@@ -108,6 +116,73 @@ func handleCommand(args []string) string {
 
 		store[args[1]] = strconv.Itoa(newVal)
 		return encodeNumber(newVal)
+
+	case "EXPIRE":
+		if len(args) != 3 {
+			return errorWrongNumberOfArguments(cmd)
+		}
+
+		_, exist := store[args[1]]
+		if !exist {
+			return encodeNumber(0)
+		}
+
+		seconds, err := strconv.Atoi(args[2])
+		if err != nil {
+			return encodeError("value is not an integer or out of range")
+		}
+
+		now := time.Now()
+		expiryTime := now.Add(time.Duration(seconds) * (time.Second / time.Nanosecond))
+		expiryTimes[args[1]] = expiryTime
+		return encodeNumber(1)
+
+	case "TTL":
+		if len(args) != 2 {
+			return errorWrongNumberOfArguments(cmd)
+		}
+
+		_, exist := store[args[1]]
+		if !exist {
+			return encodeNumber(-2)
+		}
+
+		expiryTime, exist := expiryTimes[args[1]]
+		if !exist {
+			return encodeNumber(-1)
+		}
+
+		now := time.Now()
+		if !expiryTime.After(now) {
+			return encodeNumber(-2)
+		}
+
+		return encodeNumber(int(expiryTime.Sub(time.Now()).Round(time.Second).Seconds()))
+
+	case "PERSIST":
+		if len(args) != 2 {
+			return errorWrongNumberOfArguments(cmd)
+		}
+
+		_, exist := store[args[1]]
+		if !exist {
+			return encodeNumber(0)
+		}
+
+		delete(expiryTimes, args[1])
+		return encodeNumber(1)
+
+	case "WAIT":
+		if len(args) != 2 {
+			return errorWrongNumberOfArguments(cmd)
+		}
+
+		seconds, err := strconv.Atoi(args[2])
+		if err != nil {
+			return encodeError("value is not an integer or out of range")
+		}
+
+		time.Sleep(time.Duration(seconds))
 	}
 
 	return fmt.Sprintf("-ERR unknown command '%s'\r\n", cmd)

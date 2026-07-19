@@ -81,15 +81,47 @@ func handleCommand(args []string) string {
 			return errorWrongNumberOfArguments(cmd)
 		}
 
-		val, ok := store[args[1]]
-		return encodeBulkString(val, ok)
+		key := args[1]
+		val, ok := store[key]
 
+		if !ok {
+			return encodeBulkString(val, ok)
+		}
+
+		expiryTime, ok := expiryTimes[key]
+		if !ok {
+			return encodeBulkString(val, true)
+		}
+
+		now := time.Now()
+		if expiryTime.After(now) {
+			return encodeBulkString(val, true)
+		}
+
+		delete(expiryTimes, key)
+		delete(store, key)
+		return encodeBulkString("", false)
 	case "DBSIZE":
 		if len(args) != 1 {
 			return errorWrongNumberOfArguments(cmd)
 		}
 
-		return encodeNumber(len(store))
+		var count int
+		now := time.Now()
+		for key, _ := range store {
+			expiryTime, exist := expiryTimes[key]
+			if !exist {
+				count++
+				continue
+			}
+
+			if expiryTime.Before(now) {
+				continue
+			}
+			count++
+		}
+
+		return encodeNumber(count)
 
 	case "INCR", "DECR":
 		valStr, exist := store[args[1]]
@@ -202,12 +234,39 @@ func handleCommand(args []string) string {
 			return errorWrongNumberOfArguments(cmd)
 		}
 
-		seconds, err := strconv.Atoi(args[2])
+		seconds, err := strconv.Atoi(args[1])
 		if err != nil {
 			return encodeError("value is not an integer or out of range")
 		}
 
-		time.Sleep(time.Duration(seconds))
+		time.Sleep(time.Duration(seconds) * time.Millisecond)
+		return encodeSimpleString("OK")
+	case "EXISTS":
+		if len(args) != 2 {
+			return errorWrongNumberOfArguments(cmd)
+		}
+
+		key := args[1]
+		_, ok := store[key]
+
+		if !ok {
+			return encodeNumber(0)
+		}
+
+		expiryTime, ok := expiryTimes[key]
+		if !ok {
+			return encodeNumber(1)
+		}
+
+		now := time.Now()
+		if expiryTime.After(now) {
+			return encodeNumber(1)
+		}
+
+		delete(store, key)
+		delete(expiryTimes, key)
+
+		return encodeNumber(0)
 	}
 
 	return fmt.Sprintf("-ERR unknown command '%s'\r\n", cmd)
